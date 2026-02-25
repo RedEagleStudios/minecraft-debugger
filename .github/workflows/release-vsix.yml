@@ -2,9 +2,6 @@ name: release-vsix
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: write
@@ -15,10 +12,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Compute next tag
+        id: tag
+        run: |
+          git fetch --tags
+          LATEST=$(git tag -l 'vsix-v*' | sed 's/vsix-v//' | sort -n | tail -1)
+          if [ -z "$LATEST" ]; then
+            NEXT=1
+          else
+            NEXT=$((LATEST + 1))
+          fi
+          echo "name=vsix-v${NEXT}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.tag.outputs.name }}
+          git push origin ${{ steps.tag.outputs.name }}
 
       - run: npm run ci:all
 
@@ -28,12 +46,13 @@ jobs:
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: minecraft-debugger-vsix
+          name: minecraft-debugger-${{ steps.tag.outputs.name }}
           path: minecraft-debugger.vsix
           if-no-files-found: error
 
-      - name: Attach VSIX to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: VSIX ${{ steps.tag.outputs.name }}
           files: minecraft-debugger.vsix
